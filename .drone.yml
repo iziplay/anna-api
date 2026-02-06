@@ -1,0 +1,37 @@
+
+kind: pipeline
+type: kubernetes
+name: default
+
+steps:
+- name: anna-docker-push
+  image: plugins/docker
+  settings:
+    registry: rg.fr-par.scw.cloud/iziplay
+    repo: rg.fr-par.scw.cloud/iziplay/anna
+    tag: ${DRONE_COMMIT}
+    dockerfile: Dockerfile
+    username:
+      from_secret: docker_username
+    password:
+      from_secret: docker_password
+  environment:
+    DOCKER_USERNAME:
+      from_secret: docker_username
+    DOCKER_PASSWORD:
+      from_secret: docker_password
+  privileged: true
+
+- name: Update chart anna
+  image: florianhj/drone-auto-pr:1.0.6
+  environment:
+    GITHUB_OAUTH_TOKEN:
+      from_secret: github_token
+  settings:
+    owner: f-hj
+    repository: my-apps
+    regex: 'tag: ([A-Za-z0-9.]+)'
+    release: false
+    files:
+      - 'random/anna-api/values.yaml'
+    message: 'chore: update anna version'
