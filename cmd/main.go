@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -10,9 +11,18 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
-	routing "github.com/iziplay/anna-api/api"
+	anna "github.com/iziplay/anna-api"
+	routing "github.com/iziplay/anna-api/pkg/api"
 	"github.com/iziplay/anna-api/pkg/database"
 	"github.com/iziplay/anna-api/pkg/sync"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
+	"gorm.io/plugin/opentelemetry/tracing"
 )
 
 func init() {
@@ -20,6 +30,33 @@ func init() {
 }
 
 func main() {
+	ctx := context.Background()
+	exp, err := otlptracegrpc.New(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithResource(
+			resource.NewWithAttributes(
+				semconv.SchemaURL,
+				semconv.ServiceName("anna-api"),
+			),
+		),
+	)
+
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(
+		propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		),
+	)
+
+	database.DB.Use(tracing.NewPlugin())
+
 	router := chi.NewRouter()
 
 	router.Use(cors.Handler(cors.Options{
@@ -43,6 +80,8 @@ func main() {
 	}
 
 	config := huma.DefaultConfig("Anna API", "1.0.0")
+	config.OpenAPI.Info.Description = anna.Readme
+	config.DocsPath = "/"
 	config.Servers = []*huma.Server{
 		{URL: host},
 	}
@@ -52,7 +91,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:    addr,
-		Handler: router,
+		Handler: otelhttp.NewHandler(router, "api"),
 	}
 
 	go func() {
@@ -65,9 +104,11 @@ func main() {
 	go database.ComputeAndCacheStats(false)
 
 	for {
+		ctx := context.Background()
+
 		// Calculate time until next sync
 		var sleepDuration time.Duration
-		lastSync, err := sync.GetLastSync()
+		lastSync, err := sync.GetLastSync(ctx)
 		if err != nil {
 			// If no last sync: the first sync was errored, wait 24 hours
 			sleepDuration = 24 * time.Hour
@@ -84,7 +125,7 @@ func main() {
 		time.Sleep(sleepDuration)
 
 		// Perform sync
-		if err := sync.Sync(); err != nil {
+		if err := sync.Sync(ctx); err != nil {
 			log.Printf("Sync failed: %v", err)
 		}
 	}

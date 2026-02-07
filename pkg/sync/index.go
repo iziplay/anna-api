@@ -1,20 +1,28 @@
 package sync
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/iziplay/anna-api/pkg/anna"
 	"github.com/iziplay/anna-api/pkg/database"
+	"go.opentelemetry.io/otel"
 	"gorm.io/gorm"
 )
 
+var tracer = otel.Tracer("github.com/iziplay/anna-api/pkg/sync")
+
 // GetLastSync returns the last sync from database
-func GetLastSync() (*database.Synchronization, error) {
+func GetLastSync(ctx context.Context) (*database.Synchronization, error) {
+	ctx, span := tracer.Start(ctx, "GetLastSync")
+	defer span.End()
+
 	var sync *database.Synchronization
-	err := database.DB.Order("date DESC").First(&sync).Error
+	err := database.DB.WithContext(ctx).Order("date DESC").First(&sync).Error
 	if err != nil {
 		return nil, err
 	}
@@ -22,18 +30,11 @@ func GetLastSync() (*database.Synchronization, error) {
 	return sync, nil
 }
 
-// ShouldSync checks if a sync should be performed but only on time value
-func ShouldSync() bool {
-	lastSync, err := GetLastSync()
-	if err != nil {
-		return true
-	}
+func Sync(ctx context.Context) error {
+	ctx, span := tracer.Start(ctx, "Sync")
+	defer span.End()
 
-	return time.Since(lastSync.Date) > 24*time.Hour
-}
-
-func Sync() error {
-	lastSync, err := GetLastSync()
+	lastSync, err := GetLastSync(ctx)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return fmt.Errorf("cannot sync: %w", err)
 	}
@@ -55,7 +56,7 @@ func Sync() error {
 			Date: time.Now(),
 			Base: t.DisplayName,
 		}
-		err = database.DB.Create(&syncRecord).Error
+		err = database.DB.WithContext(ctx).Create(&syncRecord).Error
 		GetStatsInstance().EndSync()
 		return nil
 	}
@@ -63,7 +64,7 @@ func Sync() error {
 	log.Printf("Starting sync with torrent: %s", t.MagnetLink)
 
 	// Download and process records in parallel - reading gz while torrent is downloading
-	results, err := anna.DownloadAndProcessRecords(t, &annaProcessor{})
+	results, err := anna.DownloadAndProcessRecords(ctx, t, &annaProcessor{})
 
 	if err != nil {
 		GetStatsInstance().EndSync()
@@ -82,14 +83,16 @@ func Sync() error {
 
 	log.Printf("Sync completed successfully: processed %d records from %d files", totalRecords, len(results))
 
-	//anna.CleanupFiles()
+	if os.Getenv("ANNA_KEEP_FILES") != "true" {
+		anna.CleanupFiles()
+	}
 
 	syncRecord := database.Synchronization{
 		Date:     time.Now(),
 		Base:     t.DisplayName,
 		Complete: true,
 	}
-	err = database.DB.Create(&syncRecord).Error
+	err = database.DB.WithContext(ctx).Create(&syncRecord).Error
 	GetStatsInstance().EndSync()
 	return err
 }
@@ -98,11 +101,11 @@ type annaProcessor struct {
 	anna.Processor
 }
 
-func (*annaProcessor) Files(paths []string) {
+func (*annaProcessor) Files(ctx context.Context, paths []string) {
 	GetStatsInstance().StartSync(paths)
 }
 
-func (*annaProcessor) Stats(filePath string, statsType anna.StatsType, percent float64) {
+func (*annaProcessor) Stats(ctx context.Context, filePath string, statsType anna.StatsType, percent float64) {
 	statsInstance := GetStatsInstance()
 	var fileIndex int = -1
 
@@ -127,6 +130,6 @@ func (*annaProcessor) Stats(filePath string, statsType anna.StatsType, percent f
 	}
 }
 
-func (*annaProcessor) Record(record *anna.Record) {
-	database.UpsertRecordAndIdentifiers(record)
+func (*annaProcessor) Record(ctx context.Context, record *anna.Record) {
+	database.UpsertRecordAndIdentifiers(ctx, record)
 }

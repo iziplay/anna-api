@@ -1,21 +1,26 @@
-# Iziplay Anna's archive API
+# 📚 Anna's Archive API
 
-## Concepts
+> Programmatic access to Anna's Archive metadata ; powered by torrents.
 
-### Storage
+Anna's Archive doesn't have an API. Most people work around this by scraping, but honestly, I'm not a fan of that approach. What I *do* love is torrents ; so this project takes Anna's public metadata torrents, indexes them into PostgreSQL, and serves everything through a clean REST API.
 
-For more simplicity, this uses a Postgres database (and Gorm as ORM under the hood) instead of the whole Anna's archive program
+## How it works
 
-### API
+**Anna's Archive Torrents** → **Download & Extract** → **PostgreSQL** → **This API**
 
-This API provides some routes to let projects uses the Anna's archive database to search files
+On startup, the service looks for the latest metadata torrent from Anna's Archive. If there's something new, it downloads and streams the compressed files, then parses all the records (only ePub files, all others are ignored) with their identifiers (ISBN, DOI, MD5…) and classifications (Dewey, LCC…) into PostgreSQL.
 
-### Auto-sync
+Statistics are cached in memory so API responses stay fast. The whole thing runs again every 24 hours to stay up to date.
 
-This app auto-sync 1 time per day (at launch or 24 hours after launch if it was sync before) by downloading Anna's archive metadata files if theses are new
+## Good to know
 
-## Why?
+Only ePub files, this check can be removed and/or made configurable, feel free to open a PR if this doesn't suits your needs!
 
-### No Anna's archive API
+On a fresh start (first sync ever), the API will return **503** until the initial sync is done: there's simply no data to serve yet. After that, syncs happen quietly in the background.
 
-Anna's archive does not provide an API for search and I'm not very found of scraping. However, I love torrents!
+## Under the hood
+
+- **Go** with [Huma](https://huma.rocks) for OpenAPI-first routing
+- **PostgreSQL** + GORM for storage
+- **BitTorrent** for grabbing data without relying on any central server
+- **OpenTelemetry** for tracing

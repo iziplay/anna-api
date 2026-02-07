@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -81,13 +82,13 @@ const (
 )
 
 type Processor interface {
-	Files(paths []string)
-	Stats(path string, key StatsType, value float64)
-	Record(record *Record)
+	Files(ctx context.Context, paths []string)
+	Stats(ctx context.Context, path string, key StatsType, value float64)
+	Record(ctx context.Context, record *Record)
 }
 
 // DownloadAndProcessRecords downloads torrent files and processes records in parallel as they download
-func DownloadAndProcessRecords(torrentResponse *TorrentsResponse, processor Processor) ([]FileResult, error) {
+func DownloadAndProcessRecords(ctx context.Context, torrentResponse *TorrentsResponse, processor Processor) ([]FileResult, error) {
 	t, err := client.AddMagnet(torrentResponse.MagnetLink)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add magnet: %w", err)
@@ -126,7 +127,7 @@ func DownloadAndProcessRecords(torrentResponse *TorrentsResponse, processor Proc
 	for i, file := range matchedFiles {
 		fileNames[i] = file.Path()
 	}
-	processor.Files(fileNames)
+	processor.Files(ctx, fileNames)
 
 	// Set download priority based on index order (lower index = higher priority)
 	// PiecePriorityNow > PiecePriorityHigh > PiecePriorityNormal
@@ -157,7 +158,7 @@ func DownloadAndProcessRecords(torrentResponse *TorrentsResponse, processor Proc
 		}
 		go func(index int, f *torrent.File) {
 			defer wg.Done()
-			result := processFileWhileDownloading(index, f, processor)
+			result := processFileWhileDownloading(ctx, index, f, processor)
 			if result.Error != nil {
 				e := fmt.Errorf("cannot process file %d: %w", index, result.Error)
 				panic(e)
@@ -178,7 +179,7 @@ func DownloadAndProcessRecords(torrentResponse *TorrentsResponse, processor Proc
 			case <-done:
 				return
 			case <-ticker.C:
-				updateProgress(matchedFiles, processor)
+				updateProgress(ctx, matchedFiles, processor)
 			}
 		}
 	}()
@@ -187,13 +188,16 @@ func DownloadAndProcessRecords(torrentResponse *TorrentsResponse, processor Proc
 	wg.Wait()
 	close(done)
 
+	// Drop the torrent to free resources - files will remain on disk for any post-processing if needed
+	t.Drop()
+
 	log.Printf("All files processed successfully")
 
 	return results, nil
 }
 
 // processFileWhileDownloading reads and processes a gz file while it's being downloaded
-func processFileWhileDownloading(index int, file *torrent.File, processor Processor) FileResult {
+func processFileWhileDownloading(ctx context.Context, index int, file *torrent.File, processor Processor) FileResult {
 	result := FileResult{
 		FilePath: file.Path(),
 	}
@@ -243,7 +247,7 @@ func processFileWhileDownloading(index int, file *torrent.File, processor Proces
 			continue
 		}
 
-		processor.Record(&record)
+		processor.Record(ctx, &record)
 
 		recordCount++
 
@@ -256,12 +260,12 @@ func processFileWhileDownloading(index int, file *torrent.File, processor Proces
 			if totalBytes > 0 {
 				progress = float64(bytesCompleted) / float64(totalBytes) * 100
 			}
-			processor.Stats(file.Path(), StatsTypeFileProcessing, progress)
+			processor.Stats(ctx, file.Path(), StatsTypeFileProcessing, progress)
 		}
 	}
 
-	processor.Stats(file.Path(), StatsTypeFileProcessing, 100.0)
-	processor.Stats(file.Path(), StatsTypeFileDownload, 100.0)
+	processor.Stats(ctx, file.Path(), StatsTypeFileProcessing, 100.0)
+	processor.Stats(ctx, file.Path(), StatsTypeFileDownload, 100.0)
 
 	result.RecordCount = recordCount
 	return result
@@ -269,7 +273,7 @@ func processFileWhileDownloading(index int, file *torrent.File, processor Proces
 
 // processFileFromDisk reads and processes a gz file after it has been fully downloaded to disk
 // This is more efficient than streaming as it avoids torrent protocol overhead during reads
-func processFileFromDisk(index int, file *torrent.File, processor Processor) FileResult {
+func processFileFromDisk(ctx context.Context, index int, file *torrent.File, processor Processor) FileResult {
 	result := FileResult{
 		FilePath: file.Path(),
 	}
@@ -355,15 +359,15 @@ func processFileFromDisk(index int, file *torrent.File, processor Processor) Fil
 			continue
 		}
 
-		processor.Record(&record)
+		processor.Record(ctx, &record)
 
 		recordCount++
 
 		log.Printf("  File %2d: Processed %d records", index, recordCount)
 	}
 
-	processor.Stats(file.Path(), StatsTypeFileProcessing, 100.0)
-	processor.Stats(file.Path(), StatsTypeFileDownload, 100.0)
+	processor.Stats(ctx, file.Path(), StatsTypeFileProcessing, 100.0)
+	processor.Stats(ctx, file.Path(), StatsTypeFileDownload, 100.0)
 	log.Printf("Completed file %d: %s - %d records processed", index, file.Path(), recordCount)
 
 	result.RecordCount = recordCount
@@ -375,7 +379,7 @@ func CleanupFiles() error {
 	return os.RemoveAll(DataDir)
 }
 
-func updateProgress(files []*torrent.File, processor Processor) {
+func updateProgress(ctx context.Context, files []*torrent.File, processor Processor) {
 	for _, file := range files {
 		completed := file.BytesCompleted()
 		total := file.Length()
@@ -384,6 +388,6 @@ func updateProgress(files []*torrent.File, processor Processor) {
 			percent = float64(completed) / float64(total) * 100
 		}
 
-		processor.Stats(file.Path(), StatsTypeFileDownload, percent)
+		processor.Stats(ctx, file.Path(), StatsTypeFileDownload, percent)
 	}
 }

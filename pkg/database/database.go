@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -70,6 +71,11 @@ func init() {
 func AutoMigrate() error {
 	log.Println("Running auto migration...")
 
+	// Enable pg_trgm extension for trigram-based ILIKE indexes
+	if err := DB.Exec("CREATE EXTENSION IF NOT EXISTS pg_trgm").Error; err != nil {
+		return fmt.Errorf("failed to create pg_trgm extension: %w", err)
+	}
+
 	err := DB.AutoMigrate(
 		&Record{},
 		&RecordIdentifier{},
@@ -100,7 +106,7 @@ func sanitizeString(s string) string {
 }
 
 // UpsertRecordAndIdentifiers creates or updates a record and its identifiers from an Anna record
-func UpsertRecordAndIdentifiers(annaRecord *anna.Record) error {
+func UpsertRecordAndIdentifiers(ctx context.Context, annaRecord *anna.Record) error {
 	if annaRecord == nil {
 		return nil
 	}
@@ -128,7 +134,7 @@ func UpsertRecordAndIdentifiers(annaRecord *anna.Record) error {
 	}
 
 	// Upsert the record using ON CONFLICT
-	if err := DB.Clauses(clause.OnConflict{
+	if err := DB.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"title", "publisher", "author", "cover_url", "year", "languages", "updated_at"}),
 	}).Create(&record).Error; err != nil {
@@ -148,7 +154,7 @@ func UpsertRecordAndIdentifiers(annaRecord *anna.Record) error {
 	}
 
 	if len(identifiers) > 0 {
-		if err := DB.Clauses(clause.OnConflict{
+		if err := DB.WithContext(ctx).Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "record"}, {Name: "type"}, {Name: "value"}},
 			DoUpdates: clause.AssignmentColumns([]string{"updated_at"}),
 		}).Create(&identifiers).Error; err != nil {
@@ -169,7 +175,7 @@ func UpsertRecordAndIdentifiers(annaRecord *anna.Record) error {
 	}
 
 	if len(classifications) > 0 {
-		if err := DB.Clauses(clause.OnConflict{
+		if err := DB.WithContext(ctx).Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "record"}, {Name: "type"}, {Name: "value"}},
 			DoUpdates: clause.AssignmentColumns([]string{"updated_at"}),
 		}).Create(&classifications).Error; err != nil {
