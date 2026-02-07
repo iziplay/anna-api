@@ -23,7 +23,7 @@ func GetLastSync(ctx context.Context) (*database.Synchronization, error) {
 
 	var sync *database.Synchronization
 	err := database.DB.WithContext(ctx).Order("date DESC").First(&sync).Error
-	if err != nil {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
 

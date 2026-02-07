@@ -110,10 +110,11 @@ func main() {
 		var sleepDuration time.Duration
 		lastSync, err := sync.GetLastSync(ctx)
 		if err != nil {
-			// If no last sync: the first sync was errored, wait 24 hours
-			sleepDuration = 24 * time.Hour
+			log.Fatal(err)
 		} else {
-			sleepDuration = time.Until(lastSync.Date.Add(24 * time.Hour))
+			if lastSync != nil {
+				sleepDuration = time.Until(lastSync.Date.Add(24 * time.Hour))
+			}
 
 			// If sleep duration is negative or very small, sync immediately
 			if sleepDuration <= 0 {
