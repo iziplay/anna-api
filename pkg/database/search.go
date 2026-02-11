@@ -109,3 +109,77 @@ func SearchByText(title, author, publisher string, limit, offset int) ([]Record,
 
 	return records, total, nil
 }
+
+// GetRecordByID returns a single record by its ID, or nil if not found.
+func GetRecordByID(id string) (*Record, error) {
+	var record Record
+	if err := DB.
+		Preload("Identifiers").
+		Preload("Classifications").
+		Where("id = ?", id).
+		First(&record).Error; err != nil {
+		return nil, err
+	}
+	return &record, nil
+}
+
+// RecordDownloadInfo contains the information needed to download a record's file.
+type RecordDownloadInfo struct {
+	TorrentClassification string // e.g., "managed_by_aa/zlib/pilimi-zlib-6160000-7229999.torrent"
+	ServerPath            string // e.g., "g5/zlib1/zlib1/pilimi-zlib-6160000-7229999/7225029"
+}
+
+// GetRecordDownloadInfo retrieves the torrent classification and server_path for downloading a record's file.
+func GetRecordDownloadInfo(id string) (*RecordDownloadInfo, error) {
+	var torrentClasses []RecordClassification
+	if err := DB.Where("record = ? AND type = ?", id, "torrent").Find(&torrentClasses).Error; err != nil {
+		return nil, fmt.Errorf("torrent classifications lookup failed: %w", err)
+	}
+	if len(torrentClasses) == 0 {
+		return nil, fmt.Errorf("no torrent classifications found")
+	}
+
+	var serverPathIdents []RecordIdentifier
+	if err := DB.Where("record = ? AND type = ?", id, "server_path").Find(&serverPathIdents).Error; err != nil {
+		return nil, fmt.Errorf("server_path identifiers lookup failed: %w", err)
+	}
+	if len(serverPathIdents) == 0 {
+		return nil, fmt.Errorf("no server_path identifiers found")
+	}
+
+	// Try to find a matching pair where the server path contains the torrent filename (without extension)
+	for _, tc := range torrentClasses {
+		// tc.Value example: "managed_by_aa/zlib/pilimi-zlib-6160000-7229999.torrent"
+
+		// Extract base name from torrent path
+		parts := strings.Split(tc.Value, "/")
+		fileName := parts[len(parts)-1]
+		baseName := strings.TrimSuffix(fileName, ".torrent")
+
+		for _, sp := range serverPathIdents {
+			// sp.Value example: "g5/zlib1/zlib1/pilimi-zlib-6160000-7229999/7225029"
+
+			if strings.Contains(sp.Value, baseName) {
+				return &RecordDownloadInfo{
+					TorrentClassification: tc.Value,
+					ServerPath:            sp.Value,
+				}, nil
+			}
+		}
+	}
+
+	// Fallback to the first available pair if no clear match is found
+	return &RecordDownloadInfo{
+		TorrentClassification: torrentClasses[0].Value,
+		ServerPath:            serverPathIdents[0].Value,
+	}, nil
+}
+
+// GetTorrentByClassification finds a torrent whose URL ends with the given classification value.
+func GetTorrentByClassification(classification string) (*Torrent, error) {
+	var t Torrent
+	if err := DB.Where("url LIKE ?", "%"+classification).First(&t).Error; err != nil {
+		return nil, fmt.Errorf("torrent not found for classification %s: %w", classification, err)
+	}
+	return &t, nil
+}

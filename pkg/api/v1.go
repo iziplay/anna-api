@@ -2,8 +2,10 @@ package routing
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/iziplay/anna-api/pkg/anna"
@@ -28,6 +30,22 @@ type PlainOutput struct {
 
 type SyncStatsOutput struct {
 	Body sync.SyncStats
+}
+
+type DownloadInput struct {
+	ID string `path:"id" doc:"Record ID (e.g. md5:abc123)" required:"true"`
+}
+
+type DownloadOutput struct {
+	ContentType        string `header:"Content-Type"`
+	ContentDisposition string `header:"Content-Disposition"`
+	Body               []byte
+}
+
+type DownloadStatusOutput struct {
+	Body struct {
+		Status anna.DownloadStatus `json:"status" enum:"NOT_STARTED,DOWNLOADING,DOWNLOADED" doc:"Download status"`
+	}
 }
 
 type SearchByISBNInput struct {
@@ -116,6 +134,91 @@ func Setup(api huma.API) {
 			Body:        []byte(anna.GetTorrentStats()),
 		}
 		return resp, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "CheckDownloadStatus",
+		Method:      "GET",
+		Path:        "/v1/records/{id}/status",
+		Summary:     "Check download status",
+		Description: "Check the current status of the epub download for a record",
+		Tags:        []string{"Download"},
+		Security: []map[string][]string{
+			{"bearerAuth": {}},
+		},
+	}, func(ctx context.Context, input *DownloadInput) (*DownloadStatusOutput, error) {
+		filename := fmt.Sprintf("%s.epub", strings.ReplaceAll(input.ID, ":", "_"))
+		status := anna.GetDownloadStatus(filename)
+		resp := &DownloadStatusOutput{}
+		resp.Body.Status = status
+		return resp, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "PrefetchRecord",
+		Method:      "POST",
+		Path:        "/v1/records/{id}/prefetch",
+		Summary:     "Prefetch epub",
+		Description: "Start downloading the epub file in background",
+		Tags:        []string{"Download"},
+		Security: []map[string][]string{
+			{"bearerAuth": {}},
+		},
+	}, func(ctx context.Context, input *DownloadInput) (*struct{}, error) {
+		info, err := database.GetRecordDownloadInfo(input.ID)
+		if err != nil {
+			return nil, huma.Error404NotFound("record download info not found", err)
+		}
+
+		torrent, err := database.GetTorrentByClassification(info.TorrentClassification)
+		if err != nil {
+			return nil, huma.Error404NotFound("torrent not found", err)
+		}
+
+		filename := fmt.Sprintf("%s.epub", strings.ReplaceAll(input.ID, ":", "_"))
+
+		bgCtx := context.WithoutCancel(ctx)
+		go func() {
+			if _, err := anna.DownloadFile(bgCtx, torrent.MagnetLink, info.ServerPath, torrent.DisplayName, filename); err != nil {
+				slog.Error("Failed to prefetch file", "id", input.ID, "error", err)
+			}
+		}()
+
+		return nil, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "DownloadRecord",
+		Method:      "GET",
+		Path:        "/v1/records/{id}/download",
+		Summary:     "Download epub",
+		Description: "Download the epub file for a record from its source torrent",
+		Tags:        []string{"Download"},
+		Security: []map[string][]string{
+			{"bearerAuth": {}},
+		},
+	}, func(ctx context.Context, input *DownloadInput) (*DownloadOutput, error) {
+		info, err := database.GetRecordDownloadInfo(input.ID)
+		if err != nil {
+			return nil, huma.Error404NotFound("record download info not found", err)
+		}
+
+		torrent, err := database.GetTorrentByClassification(info.TorrentClassification)
+		if err != nil {
+			return nil, huma.Error404NotFound("torrent not found", err)
+		}
+
+		filename := fmt.Sprintf("%s.epub", strings.ReplaceAll(input.ID, ":", "_"))
+		data, err := anna.DownloadFile(ctx, torrent.MagnetLink, info.ServerPath, torrent.DisplayName, filename)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to download file", err)
+		}
+
+		return &DownloadOutput{
+			ContentType:        "application/epub+zip",
+			ContentDisposition: fmt.Sprintf(`attachment; filename="%s.epub"`, input.ID),
+			Body:               data,
+		}, nil
 	})
 
 	huma.Register(api, huma.Operation{
