@@ -10,6 +10,7 @@ import (
 type TorrentsResponse struct {
 	DisplayName           string `json:"display_name"`
 	URL                   string `json:"url"`
+	BTIH                  string `json:"btih"`
 	MagnetLink            string `json:"magnet_link"`
 	TopLevelGroupName     string `json:"top_level_group_name"` // e.g.: other_aa
 	GroupName             string `json:"group_name"`           // e.g.: aa_derived_mirror_metadata

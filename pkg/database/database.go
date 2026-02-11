@@ -81,6 +81,7 @@ func AutoMigrate() error {
 		&RecordIdentifier{},
 		&RecordClassification{},
 		&Synchronization{},
+		&Torrent{},
 	)
 
 	if err != nil {
@@ -98,6 +99,36 @@ func Ping() error {
 		return err
 	}
 	return sqlDB.Ping()
+}
+
+// UpsertTorrents upserts a list of torrents into the database, keyed by BTIH.
+func UpsertTorrents(ctx context.Context, torrents []anna.TorrentsResponse) error {
+	if len(torrents) == 0 {
+		return nil
+	}
+
+	records := make([]Torrent, len(torrents))
+	for i, t := range torrents {
+		records[i] = Torrent{
+			BTIH:                  t.BTIH,
+			DisplayName:           t.DisplayName,
+			URL:                   t.URL,
+			MagnetLink:            t.MagnetLink,
+			TopLevelGroupName:     t.TopLevelGroupName,
+			GroupName:             t.GroupName,
+			Obsolete:              t.Obsolete,
+			AddedToTorrentsListAt: t.AddedToTorrentsListAt,
+		}
+	}
+
+	if err := DB.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "btih"}},
+		DoUpdates: clause.AssignmentColumns([]string{"display_name", "url", "magnet_link", "top_level_group_name", "group_name", "obsolete", "added_to_torrents_list_at", "updated_at"}),
+	}).Create(&records).Error; err != nil {
+		return fmt.Errorf("failed to upsert torrents: %w", err)
+	}
+
+	return nil
 }
 
 // sanitizeString removes null bytes which PostgreSQL rejects in text fields

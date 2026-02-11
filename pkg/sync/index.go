@@ -48,6 +48,11 @@ func Sync(ctx context.Context) error {
 	}
 	log.Printf("Fetched %d torrents from Anna repository", len(at))
 
+	// Upsert torrents into database
+	if err := database.UpsertTorrents(ctx, at); err != nil {
+		log.Printf("warning: failed to upsert torrents to database: %v", err)
+	}
+
 	t := anna.GetLastMetadataTorrent(at)
 	if t == nil {
 		return fmt.Errorf("no metadata torrent found")

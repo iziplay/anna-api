@@ -42,6 +42,19 @@ type RecordClassification struct {
 	Value  string `json:"value" gorm:"primaryKey;index:idx_record_classification_type_value"`
 }
 
+type Torrent struct {
+	Model
+
+	BTIH                  string `json:"btih" gorm:"primaryKey;column:btih"`
+	DisplayName           string `json:"display_name"`
+	URL                   string `json:"url"`
+	MagnetLink            string `json:"magnet_link"`
+	TopLevelGroupName     string `json:"top_level_group_name"`
+	GroupName             string `json:"group_name"`
+	Obsolete              bool   `json:"obsolete"`
+	AddedToTorrentsListAt string `json:"added_to_torrents_list_at"`
+}
+
 type Synchronization struct {
 	Date     time.Time `gorm:"primaryKey;type:timestamptz"`
 	Base     string    // the database used for this sync, e.g.: "aa_derived_mirror_metadata_20240612.torrent"
