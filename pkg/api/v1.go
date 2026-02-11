@@ -120,6 +120,9 @@ func Setup(api huma.API) {
 	}, func(ctx context.Context, input *SearchByISBNInput) (*SearchOutput, error) {
 		records, total, err := database.SearchByISBN(input.ISBN, input.Limit, input.Offset)
 		if err != nil {
+			if database.IsValidationError(err) {
+				return nil, huma.Error400BadRequest(err.Error())
+			}
 			return nil, huma.Error500InternalServerError("failed to search by ISBN", err)
 		}
 		resp := &SearchOutput{}

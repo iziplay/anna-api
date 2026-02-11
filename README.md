@@ -8,7 +8,7 @@ Anna's Archive doesn't have an API. Most people work around this by scraping, bu
 
 **Anna's Archive Torrents** → **Download & Extract** → **PostgreSQL** → **This API**
 
-On startup, the service looks for the latest metadata torrent from Anna's Archive. If there's something new, it downloads and streams the compressed files, then parses all the records (only ePub files, all others are ignored) with their identifiers (ISBN, DOI, MD5…) and classifications (Dewey, LCC…) into PostgreSQL.
+On startup, the service looks for the latest metadata torrent from Anna's Archive. If there's something new, it downloads and streams the compressed files, then parses all the records (only ePub files, all others are ignored) with their identifiers (ISBN, Google books ID, OCLC...) and classifications (torrent, source...) into PostgreSQL.
 
 Statistics are cached in memory so API responses stay fast. The whole thing runs again every 24 hours to stay up to date.
 

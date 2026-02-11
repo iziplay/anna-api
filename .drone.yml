@@ -4,6 +4,11 @@ type: kubernetes
 name: default
 
 steps:
+- name: test
+  image: golang:1.25
+  commands:
+    - go test ./...
+
 - name: anna-docker-push
   image: plugins/docker
   settings:

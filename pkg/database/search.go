@@ -1,15 +1,44 @@
 package database
 
-import "strings"
+import (
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/iziplay/anna-api/pkg/isbn"
+)
+
+var errValidation = errors.New("validation error")
+
+// IsValidationError checks whether an error is a validation error.
+func IsValidationError(err error) bool {
+	return errors.Is(err, errValidation)
+}
 
 // SearchByISBN finds records matching an ISBN10 or ISBN13 value.
-// It looks up the record_identifiers table for types "isbn10" and "isbn13".
-func SearchByISBN(isbn string, limit, offset int) ([]Record, int64, error) {
-	isbn = strings.TrimSpace(isbn)
+// It also computes the alternate ISBN form and searches for both.
+func SearchByISBN(isbnCode string, limit, offset int) ([]Record, int64, error) {
+	isbnCode = strings.TrimSpace(isbnCode)
+
+	if len(isbnCode) != 10 && len(isbnCode) != 13 {
+		return nil, 0, fmt.Errorf("invalid ISBN length: expected 10 or 13 characters, got %d: %w", len(isbnCode), errValidation)
+	}
+
+	// Build the set of ISBNs to search for
+	isbns := []string{isbnCode}
+	if len(isbnCode) == 10 {
+		if isbn13 := isbn.To13(isbnCode); isbn13 != "" {
+			isbns = append(isbns, isbn13)
+		}
+	} else if len(isbnCode) == 13 && strings.HasPrefix(isbnCode, "978") {
+		if isbn10 := isbn.To10(isbnCode); isbn10 != "" {
+			isbns = append(isbns, isbn10)
+		}
+	}
 
 	var identifiers []RecordIdentifier
 	if err := DB.
-		Where("type IN ? AND value = ?", []string{"isbn10", "isbn13"}, isbn).
+		Where("type IN ? AND value IN ?", []string{"isbn10", "isbn13"}, isbns).
 		Find(&identifiers).Error; err != nil {
 		return nil, 0, err
 	}
