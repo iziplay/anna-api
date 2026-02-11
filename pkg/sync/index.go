@@ -16,6 +16,9 @@ import (
 
 var tracer = otel.Tracer("github.com/iziplay/anna-api/pkg/sync")
 
+// syncBase holds the current torrent display name for stats reporting
+var syncBase string
+
 // GetLastSync returns the last sync from database
 func GetLastSync(ctx context.Context) (*database.Synchronization, error) {
 	ctx, span := tracer.Start(ctx, "GetLastSync")
@@ -63,6 +66,9 @@ func Sync(ctx context.Context) error {
 
 	log.Printf("Starting sync with torrent: %s", t.MagnetLink)
 
+	// Store the base name for sync stats
+	syncBase = t.DisplayName
+
 	// Download and process records in parallel - reading gz while torrent is downloading
 	results, err := anna.DownloadAndProcessRecords(ctx, t, &annaProcessor{})
 
@@ -102,7 +108,7 @@ type annaProcessor struct {
 }
 
 func (*annaProcessor) Files(ctx context.Context, paths []string) {
-	GetStatsInstance().StartSync(paths)
+	GetStatsInstance().StartSync(syncBase, paths)
 }
 
 func (*annaProcessor) Stats(ctx context.Context, filePath string, statsType anna.StatsType, percent float64) {

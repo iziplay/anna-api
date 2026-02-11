@@ -17,6 +17,7 @@ type FileProgress struct {
 type SyncStats struct {
 	mu        sync.RWMutex
 	IsRunning bool           `json:"isRunning"`
+	Base      string         `json:"base"`
 	Files     []FileProgress `json:"files"`
 }
 
@@ -36,11 +37,12 @@ func GetStatsInstance() *SyncStats {
 }
 
 // StartSync initializes sync statistics
-func (s *SyncStats) StartSync(files []string) {
+func (s *SyncStats) StartSync(base string, files []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.IsRunning = true
+	s.Base = base
 	s.Files = make([]FileProgress, len(files))
 	for i, name := range files {
 		s.Files[i] = FileProgress{
@@ -77,6 +79,7 @@ func (s *SyncStats) EndSync() {
 	defer s.mu.Unlock()
 
 	s.IsRunning = false
+	s.Base = ""
 	s.Files = nil
 
 	database.ComputeAndCacheStats(true)

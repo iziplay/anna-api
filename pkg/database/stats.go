@@ -17,6 +17,7 @@ type TypeCount struct {
 // CachedStats holds the cached database statistics
 type CachedStats struct {
 	LastSync        string      `json:"lastSync"`
+	Base            string      `json:"base"`
 	Count           int         `json:"count"`
 	Identifiers     []TypeCount `json:"identifiers"`
 	Classifications []TypeCount `json:"classifications"`
@@ -63,6 +64,7 @@ func ComputeAndCacheStats(force bool) *CachedStats {
 	}
 	if err == nil {
 		stats.LastSync = lastSync.Date.Format(time.RFC3339)
+		stats.Base = lastSync.Base
 	}
 
 	// Count records
