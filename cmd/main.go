@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -95,9 +95,10 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Starting server on %s", addr)
+		slog.Info("Starting server", "addr", addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal(err)
+			slog.Error("Server failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -110,7 +111,8 @@ func main() {
 		var sleepDuration time.Duration
 		lastSync, err := sync.GetLastSync(ctx)
 		if err != nil {
-			log.Fatal(err)
+			slog.Error("Failed to get last sync", "error", err)
+			os.Exit(1)
 		} else {
 			if lastSync != nil {
 				sleepDuration = time.Until(lastSync.Date.Add(24 * time.Hour))
@@ -122,12 +124,12 @@ func main() {
 			}
 		}
 
-		log.Printf("Next sync in %v", sleepDuration)
+		slog.Info("Next sync scheduled", "in", sleepDuration)
 		time.Sleep(sleepDuration)
 
 		// Perform sync
 		if err := sync.Sync(ctx); err != nil {
-			log.Printf("Sync failed: %v", err)
+			slog.Error("Sync failed", "error", err)
 		}
 	}
 }

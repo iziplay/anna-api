@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path"
 	"regexp"
@@ -41,7 +41,7 @@ func ExtractFileIndex(path string) (int, error) {
 
 func init() {
 	if dir, ok := os.LookupEnv("ANNA_TORRENT_DATA_DIR"); ok {
-		log.Printf("Using custom Anna torrent data dir: %s", dir)
+		slog.Info("Using custom Anna torrent data dir", "dir", dir)
 		DataDir = dir
 	}
 }
@@ -94,7 +94,7 @@ func DownloadAndProcessRecords(ctx context.Context, torrentResponse *TorrentsRes
 		return nil, fmt.Errorf("failed to add magnet: %w", err)
 	}
 
-	log.Printf("Waiting for torrent info...")
+	slog.Info("Waiting for torrent info...")
 	<-t.GotInfo()
 
 	filePattern := regexp.MustCompile(`elasticsearch/aarecords__\d+\.json\.gz$`)
@@ -106,12 +106,12 @@ func DownloadAndProcessRecords(ctx context.Context, torrentResponse *TorrentsRes
 	for _, file := range t.Files() {
 		if filePattern.MatchString(file.Path()) {
 			matchedFiles = append(matchedFiles, file)
-			log.Printf("Found matching file: %s", file.Path())
+			slog.Info("Found matching file", "path", file.Path())
 		}
 	}
 
 	if len(matchedFiles) == 0 {
-		log.Printf("No matching files found in torrent")
+		slog.Warn("No matching files found in torrent")
 		return nil, nil
 	}
 
@@ -143,7 +143,7 @@ func DownloadAndProcessRecords(ctx context.Context, torrentResponse *TorrentsRes
 		file.Download()
 	}
 
-	log.Printf("Starting download and processing of %d files in parallel...", len(matchedFiles))
+	slog.Info("Starting download and processing of files in parallel", "count", len(matchedFiles))
 
 	var results []FileResult
 	var resultsMu sync.Mutex
@@ -191,7 +191,7 @@ func DownloadAndProcessRecords(ctx context.Context, torrentResponse *TorrentsRes
 	// Drop the torrent to free resources - files will remain on disk for any post-processing if needed
 	t.Drop()
 
-	log.Printf("All files processed successfully")
+	slog.Info("All files processed successfully")
 
 	return results, nil
 }
@@ -202,7 +202,7 @@ func processFileWhileDownloading(ctx context.Context, index int, file *torrent.F
 		FilePath: file.Path(),
 	}
 
-	log.Printf("Starting to process file %d: %s", index, file.Path())
+	slog.Info("Starting to process file", "index", index, "path", file.Path())
 
 	// Get a reader from the torrent file - this will block until data is available
 	reader := file.NewReader()
@@ -232,7 +232,7 @@ func processFileWhileDownloading(ctx context.Context, index int, file *torrent.F
 				break
 			}
 			if errors.Is(err, io.ErrUnexpectedEOF) {
-				log.Println("Warning: Unexpected EOF reached, ending processing, line", lineCount+1)
+				slog.Warn("Unexpected EOF reached, ending processing", "line", lineCount+1)
 				break
 			}
 			result.Error = fmt.Errorf("read error at line %d: %w", lineCount+1, err)
@@ -243,7 +243,7 @@ func processFileWhileDownloading(ctx context.Context, index int, file *torrent.F
 
 		var record Record
 		if err := json.Unmarshal([]byte(line), &record); err != nil {
-			log.Printf("Warning: Failed to parse JSON at line %d in file %s (skipping): %v", lineCount, file.Path(), err)
+			slog.Warn("Failed to parse JSON, skipping", "line", lineCount, "file", file.Path(), "error", err)
 			continue
 		}
 
@@ -278,14 +278,14 @@ func processFileFromDisk(ctx context.Context, index int, file *torrent.File, pro
 		FilePath: file.Path(),
 	}
 
-	log.Printf("Waiting for file %d to complete download: %s", index, file.Path())
+	slog.Info("Waiting for file to complete download", "index", index, "path", file.Path())
 
 	// Wait for the file to be fully downloaded
 	for file.BytesCompleted() < file.Length() {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	log.Printf("File %d download complete, processing from disk: %s", index, file.Path())
+	slog.Info("File download complete, processing from disk", "index", index, "path", file.Path())
 
 	// Construct the full path to the file on disk
 	filePath := path.Join(DataDir, file.Path())
@@ -298,7 +298,7 @@ func processFileFromDisk(ctx context.Context, index int, file *torrent.File, pro
 	}
 	defer diskFile.Close()
 
-	log.Printf("File %d: Decompressing gzip to temp file...", index)
+	slog.Info("Decompressing gzip to temp file", "index", index)
 
 	gzReader, err := gzip.NewReader(diskFile)
 	if err != nil {
@@ -326,7 +326,7 @@ func processFileFromDisk(ctx context.Context, index int, file *torrent.File, pro
 		return result
 	}
 
-	log.Printf("File %d: Decompressed %d bytes to temp file, now parsing JSON...", index, written)
+	slog.Info("Decompressed to temp file, now parsing JSON", "index", index, "bytes", written)
 
 	// Step 2: Read the JSON from the decompressed temp file
 	jsonFile, err := os.Open(tempPath)
@@ -355,7 +355,7 @@ func processFileFromDisk(ctx context.Context, index int, file *torrent.File, pro
 
 		var record Record
 		if err := json.Unmarshal([]byte(line), &record); err != nil {
-			log.Printf("Warning: Failed to parse JSON at line %d in file %s (skipping): %v", lineCount, file.Path(), err)
+			slog.Warn("Failed to parse JSON, skipping", "line", lineCount, "file", file.Path(), "error", err)
 			continue
 		}
 
@@ -363,19 +363,19 @@ func processFileFromDisk(ctx context.Context, index int, file *torrent.File, pro
 
 		recordCount++
 
-		log.Printf("  File %2d: Processed %d records", index, recordCount)
+		slog.Debug("File processing progress", "index", index, "records", recordCount)
 	}
 
 	processor.Stats(ctx, file.Path(), StatsTypeFileProcessing, 100.0)
 	processor.Stats(ctx, file.Path(), StatsTypeFileDownload, 100.0)
-	log.Printf("Completed file %d: %s - %d records processed", index, file.Path(), recordCount)
+	slog.Info("Completed file", "index", index, "path", file.Path(), "records", recordCount)
 
 	result.RecordCount = recordCount
 	return result
 }
 
 func CleanupFiles() error {
-	log.Printf("Cleaning up torrent directory: %s", DataDir)
+	slog.Info("Cleaning up torrent directory", "dir", DataDir)
 	return os.RemoveAll(DataDir)
 }
 

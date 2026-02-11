@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -47,29 +48,32 @@ func init() {
 	})
 
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		slog.Error("Failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 
 	// Configure connection pool
 	sqlDB, err := DB.DB()
 	if err != nil {
-		log.Fatalf("Failed to get underlying DB: %v", err)
+		slog.Error("Failed to get underlying DB", "error", err)
+		os.Exit(1)
 	}
 	sqlDB.SetMaxOpenConns(25)
 	sqlDB.SetMaxIdleConns(5)
 	sqlDB.SetConnMaxLifetime(5 * time.Minute)
 
-	log.Println("Database connection established")
+	slog.Info("Database connection established")
 
 	// Auto migrate the schema
 	if err := AutoMigrate(); err != nil {
-		log.Fatalf("Failed to auto migrate: %v", err)
+		slog.Error("Failed to auto migrate", "error", err)
+		os.Exit(1)
 	}
 }
 
 // AutoMigrate runs automatic migration for all models
 func AutoMigrate() error {
-	log.Println("Running auto migration...")
+	slog.Info("Running auto migration...")
 
 	// Enable pg_trgm extension for trigram-based ILIKE indexes
 	if err := DB.Exec("CREATE EXTENSION IF NOT EXISTS pg_trgm").Error; err != nil {
@@ -88,7 +92,7 @@ func AutoMigrate() error {
 		return fmt.Errorf("auto migration failed: %w", err)
 	}
 
-	log.Println("Auto migration completed successfully")
+	slog.Info("Auto migration completed successfully")
 	return nil
 }
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -46,11 +46,11 @@ func Sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("Fetched %d torrents from Anna repository", len(at))
+	slog.Info("Fetched torrents from Anna repository", "count", len(at))
 
 	// Upsert torrents into database
 	if err := database.UpsertTorrents(ctx, at); err != nil {
-		log.Printf("warning: failed to upsert torrents to database: %v", err)
+		slog.Warn("Failed to upsert torrents to database", "error", err)
 	}
 
 	t := anna.GetLastMetadataTorrent(at)
@@ -59,7 +59,7 @@ func Sync(ctx context.Context) error {
 	}
 
 	if lastSync != nil && lastSync.Base == t.DisplayName {
-		log.Printf("Sync already performed with this torrent: %s", t.DisplayName)
+		slog.Info("Sync already performed with this torrent", "torrent", t.DisplayName)
 		syncRecord := database.Synchronization{
 			Date: time.Now(),
 			Base: t.DisplayName,
@@ -69,7 +69,7 @@ func Sync(ctx context.Context) error {
 		return nil
 	}
 
-	log.Printf("Starting sync with torrent: %s", t.MagnetLink)
+	slog.Info("Starting sync", "magnet", t.MagnetLink)
 
 	// Store the base name for sync stats
 	syncBase = t.DisplayName
@@ -92,7 +92,7 @@ func Sync(ctx context.Context) error {
 		totalRecords += result.RecordCount
 	}
 
-	log.Printf("Sync completed successfully: processed %d records from %d files", totalRecords, len(results))
+	slog.Info("Sync completed successfully", "records", totalRecords, "files", len(results))
 
 	if os.Getenv("ANNA_KEEP_FILES") != "true" {
 		anna.CleanupFiles()
