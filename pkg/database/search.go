@@ -1,8 +1,10 @@
 package database
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/iziplay/anna-api/pkg/isbn"
@@ -17,7 +19,7 @@ func IsValidationError(err error) bool {
 
 // SearchByISBN finds records matching an ISBN10 or ISBN13 value.
 // It also computes the alternate ISBN form and searches for both.
-func SearchByISBN(isbnCode string, limit, offset int) ([]Record, int64, error) {
+func SearchByISBN(ctx context.Context, isbnCode string, limit, offset int) ([]Record, int64, error) {
 	isbnCode = strings.TrimSpace(isbnCode)
 
 	if len(isbnCode) != 10 && len(isbnCode) != 13 {
@@ -36,8 +38,11 @@ func SearchByISBN(isbnCode string, limit, offset int) ([]Record, int64, error) {
 		}
 	}
 
+	slog.DebugContext(ctx, "Searching by ISBN", "input", isbnCode, "search_isbns", isbns, "limit", limit, "offset", offset)
+
 	var identifiers []RecordIdentifier
 	if err := DB.
+		WithContext(ctx).
 		Where("type IN ? AND value IN ?", []string{"isbn10", "isbn13"}, isbns).
 		Find(&identifiers).Error; err != nil {
 		return nil, 0, err
@@ -58,10 +63,11 @@ func SearchByISBN(isbnCode string, limit, offset int) ([]Record, int64, error) {
 	}
 
 	var total int64
-	DB.Model(&Record{}).Where("id IN ?", recordIDs).Count(&total)
+	DB.Model(&Record{}).WithContext(ctx).Where("id IN ?", recordIDs).Count(&total)
 
 	var records []Record
 	if err := DB.
+		WithContext(ctx).
 		Preload("Identifiers").
 		Preload("Classifications").
 		Where("id IN ?", recordIDs).

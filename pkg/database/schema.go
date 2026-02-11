@@ -29,7 +29,7 @@ type Record struct {
 type RecordIdentifier struct {
 	Model
 
-	Record string `json:"record" gorm:"primaryKey"`
+	Record string `json:"-" gorm:"primaryKey"`
 	Type   string `json:"type" gorm:"primaryKey;index:idx_record_identifier_type;index:idx_record_identifier_type_value"`
 	Value  string `json:"value" gorm:"primaryKey;index:idx_record_identifier_type_value"`
 }
@@ -37,7 +37,7 @@ type RecordIdentifier struct {
 type RecordClassification struct {
 	Model
 
-	Record string `json:"record" gorm:"primaryKey"`
+	Record string `json:"-" gorm:"primaryKey"`
 	Type   string `json:"type" gorm:"primaryKey;index:idx_record_classification_type;index:idx_record_classification_type_value"`
 	Value  string `json:"value" gorm:"primaryKey;index:idx_record_classification_type_value"`
 }

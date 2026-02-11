@@ -2,6 +2,8 @@ package routing
 
 import (
 	"context"
+	"log/slog"
+	"os"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/iziplay/anna-api/pkg/anna"
@@ -50,6 +52,12 @@ type SearchOutput struct {
 }
 
 func Setup(api huma.API) {
+	if os.Getenv("ANNA_JWT_SECRET") == "" {
+		slog.Warn("ANNA_JWT_SECRET not set, authentication will be disabled")
+	}
+
+	api.UseMiddleware(authMiddleware(api))
+
 	huma.Register(api, huma.Operation{
 		OperationID: "HealthCheck",
 		Method:      "GET",
@@ -118,7 +126,7 @@ func Setup(api huma.API) {
 		Description: "Search for records matching an ISBN10 or ISBN13 code",
 		Tags:        []string{"Search"},
 	}, func(ctx context.Context, input *SearchByISBNInput) (*SearchOutput, error) {
-		records, total, err := database.SearchByISBN(input.ISBN, input.Limit, input.Offset)
+		records, total, err := database.SearchByISBN(ctx, input.ISBN, input.Limit, input.Offset)
 		if err != nil {
 			if database.IsValidationError(err) {
 				return nil, huma.Error400BadRequest(err.Error())

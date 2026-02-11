@@ -61,6 +61,7 @@ var client *torrent.Client
 func init() {
 	cfg := torrent.NewDefaultClientConfig()
 	cfg.DataDir = DataDir
+	cfg.Seed = true // we drop torrents manually after processing
 	var err error
 	client, err = torrent.NewClient(cfg)
 	if err != nil {
@@ -126,22 +127,9 @@ func DownloadAndProcessRecords(ctx context.Context, torrentResponse *TorrentsRes
 	fileNames := make([]string, len(matchedFiles))
 	for i, file := range matchedFiles {
 		fileNames[i] = file.Path()
-	}
-	processor.Files(ctx, fileNames)
-
-	// Set download priority based on index order (lower index = higher priority)
-	// PiecePriorityNow > PiecePriorityHigh > PiecePriorityNormal
-	for i, file := range matchedFiles {
-		switch i {
-		case 0:
-			file.SetPriority(torrent.PiecePriorityNow)
-		case 1:
-			file.SetPriority(torrent.PiecePriorityHigh)
-		default:
-			file.SetPriority(torrent.PiecePriorityNormal)
-		}
 		file.Download()
 	}
+	processor.Files(ctx, fileNames)
 
 	slog.Info("Starting download and processing of files in parallel", "count", len(matchedFiles))
 

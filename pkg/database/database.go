@@ -128,7 +128,7 @@ func UpsertTorrents(ctx context.Context, torrents []anna.TorrentsResponse) error
 	if err := DB.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "btih"}},
 		DoUpdates: clause.AssignmentColumns([]string{"display_name", "url", "magnet_link", "top_level_group_name", "group_name", "obsolete", "added_to_torrents_list_at", "updated_at"}),
-	}).Create(&records).Error; err != nil {
+	}).CreateInBatches(&records, 1000).Error; err != nil {
 		return fmt.Errorf("failed to upsert torrents: %w", err)
 	}
 

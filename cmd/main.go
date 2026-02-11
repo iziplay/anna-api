@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -29,8 +30,25 @@ func init() {
 	database.Ping()
 }
 
+func getLogLevelFromEnv() slog.Level {
+	levelStr := os.Getenv("LOG_LEVEL")
+
+	switch strings.ToLower(levelStr) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
 func main() {
 	ctx := context.Background()
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: getLogLevelFromEnv()})))
+
 	exp, err := otlptracegrpc.New(ctx)
 	if err != nil {
 		panic(err)
@@ -81,6 +99,13 @@ func main() {
 
 	config := huma.DefaultConfig("Anna API", "1.0.0")
 	config.OpenAPI.Info.Description = anna.Readme
+	config.OpenAPI.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		"bearerAuth": {
+			Type:         "http",
+			Scheme:       "bearer",
+			BearerFormat: "JWT",
+		},
+	}
 	config.DocsPath = "/"
 	config.Servers = []*huma.Server{
 		{URL: host},
