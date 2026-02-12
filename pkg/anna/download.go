@@ -14,6 +14,7 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -62,6 +63,15 @@ func init() {
 	cfg := torrent.NewDefaultClientConfig()
 	cfg.DataDir = DataDir
 	cfg.Seed = true // we drop torrents manually after processing
+
+	port := 42069
+	if p := os.Getenv("ANNA_TORRENT_PORT"); p != "" {
+		if parsed, err := strconv.Atoi(p); err == nil {
+			port = parsed
+		}
+	}
+	cfg.ListenPort = port
+
 	var err error
 	client, err = torrent.NewClient(cfg)
 	if err != nil {

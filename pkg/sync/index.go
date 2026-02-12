@@ -58,6 +58,13 @@ func Sync(ctx context.Context) error {
 		return fmt.Errorf("no metadata torrent found")
 	}
 
+	if os.Getenv("ANNA_DISABLE_SYNC") == "true" {
+		slog.Info("Sync disabled via environment variable")
+		for {
+			time.Sleep(1 * time.Hour)
+		}
+	}
+
 	if lastSync != nil && lastSync.Base == t.DisplayName {
 		slog.Info("Sync already performed with this torrent", "torrent", t.DisplayName)
 		syncRecord := database.Synchronization{
