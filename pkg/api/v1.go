@@ -49,17 +49,19 @@ type DownloadStatusOutput struct {
 }
 
 type SearchByISBNInput struct {
-	ISBN   string `query:"isbn" required:"true" doc:"ISBN10 or ISBN13 code to search for"`
-	Limit  int    `query:"limit" default:"20" minimum:"1" maximum:"100" doc:"Maximum number of results"`
-	Offset int    `query:"offset" default:"0" minimum:"0" doc:"Offset for pagination"`
+	ISBN      string   `query:"isbn" required:"true" doc:"ISBN10 or ISBN13 code to search for"`
+	Languages []string `query:"languages" doc:"Filter by language (strict equality)"`
+	Limit     int      `query:"limit" default:"20" minimum:"1" maximum:"100" doc:"Maximum number of results"`
+	Offset    int      `query:"offset" default:"0" minimum:"0" doc:"Offset for pagination"`
 }
 
 type SearchByTextInput struct {
-	Title     string `query:"title" required:"true" doc:"Filter by title (case-insensitive)"`
-	Author    string `query:"author" required:"true" doc:"Filter by author (case-insensitive)"`
-	Publisher string `query:"publisher" required:"true" doc:"Filter by publisher (case-insensitive)"`
-	Limit     int    `query:"limit" default:"20" minimum:"1" maximum:"100" doc:"Maximum number of results"`
-	Offset    int    `query:"offset" default:"0" minimum:"0" doc:"Offset for pagination"`
+	Title     string   `query:"title" required:"true" doc:"Filter by title (case-insensitive)"`
+	Author    string   `query:"author" required:"true" doc:"Filter by author (case-insensitive)"`
+	Publisher string   `query:"publisher" required:"true" doc:"Filter by publisher (case-insensitive)"`
+	Languages []string `query:"languages" doc:"Filter by language (strict equality)"`
+	Limit     int      `query:"limit" default:"20" minimum:"1" maximum:"100" doc:"Maximum number of results"`
+	Offset    int      `query:"offset" default:"0" minimum:"0" doc:"Offset for pagination"`
 }
 
 type SearchOutput struct {
@@ -209,7 +211,7 @@ func Setup(api huma.API) {
 		}
 
 		filename := fmt.Sprintf("%s.epub", strings.ReplaceAll(input.ID, ":", "_"))
-		data, err := anna.DownloadFile(ctx, torrent.MagnetLink, info.ServerPath, torrent.DisplayName, filename)
+		data, err := anna.DownloadFile(context.WithoutCancel(ctx), torrent.MagnetLink, info.ServerPath, torrent.DisplayName, filename)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to download file", err)
 		}
@@ -229,7 +231,7 @@ func Setup(api huma.API) {
 		Description: "Search for records matching an ISBN10 or ISBN13 code",
 		Tags:        []string{"Search"},
 	}, func(ctx context.Context, input *SearchByISBNInput) (*SearchOutput, error) {
-		records, total, err := database.SearchByISBN(ctx, input.ISBN, input.Limit, input.Offset)
+		records, total, err := database.SearchByISBN(ctx, input.ISBN, input.Languages, input.Limit, input.Offset)
 		if err != nil {
 			if database.IsValidationError(err) {
 				return nil, huma.Error400BadRequest(err.Error())
@@ -250,7 +252,7 @@ func Setup(api huma.API) {
 		Description: "Search for records by title, author, and publisher",
 		Tags:        []string{"Search"},
 	}, func(ctx context.Context, input *SearchByTextInput) (*SearchOutput, error) {
-		records, total, err := database.SearchByText(input.Title, input.Author, input.Publisher, input.Limit, input.Offset)
+		records, total, err := database.SearchByText(input.Title, input.Author, input.Publisher, input.Languages, input.Limit, input.Offset)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to search by text", err)
 		}

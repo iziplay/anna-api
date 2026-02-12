@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/iziplay/anna-api/pkg/isbn"
+	"github.com/lib/pq"
 )
 
 var errValidation = errors.New("validation error")
@@ -19,7 +20,7 @@ func IsValidationError(err error) bool {
 
 // SearchByISBN finds records matching an ISBN10 or ISBN13 value.
 // It also computes the alternate ISBN form and searches for both.
-func SearchByISBN(ctx context.Context, isbnCode string, limit, offset int) ([]Record, int64, error) {
+func SearchByISBN(ctx context.Context, isbnCode string, languages []string, limit, offset int) ([]Record, int64, error) {
 	isbnCode = strings.TrimSpace(isbnCode)
 
 	if len(isbnCode) != 10 && len(isbnCode) != 13 {
@@ -38,7 +39,7 @@ func SearchByISBN(ctx context.Context, isbnCode string, limit, offset int) ([]Re
 		}
 	}
 
-	slog.DebugContext(ctx, "Searching by ISBN", "input", isbnCode, "search_isbns", isbns, "limit", limit, "offset", offset)
+	slog.DebugContext(ctx, "Searching by ISBN", "input", isbnCode, "search_isbns", isbns, "languages", languages, "limit", limit, "offset", offset)
 
 	var identifiers []RecordIdentifier
 	if err := DB.
@@ -62,15 +63,19 @@ func SearchByISBN(ctx context.Context, isbnCode string, limit, offset int) ([]Re
 		recordIDs = append(recordIDs, id)
 	}
 
+	q := DB.Model(&Record{}).WithContext(ctx).Where("id IN ?", recordIDs)
+
+	if len(languages) > 0 {
+		q = q.Where("languages = ?", pq.StringArray(languages))
+	}
+
 	var total int64
-	DB.Model(&Record{}).WithContext(ctx).Where("id IN ?", recordIDs).Count(&total)
+	q.Count(&total)
 
 	var records []Record
-	if err := DB.
-		WithContext(ctx).
+	if err := q.
 		Preload("Identifiers").
 		Preload("Classifications").
-		Where("id IN ?", recordIDs).
 		Limit(limit).
 		Offset(offset).
 		Find(&records).Error; err != nil {
@@ -81,7 +86,7 @@ func SearchByISBN(ctx context.Context, isbnCode string, limit, offset int) ([]Re
 }
 
 // SearchByText finds records matching the given title, author, and/or publisher filters (AND logic, case-insensitive).
-func SearchByText(title, author, publisher string, limit, offset int) ([]Record, int64, error) {
+func SearchByText(title, author, publisher string, languages []string, limit, offset int) ([]Record, int64, error) {
 	q := DB.Model(&Record{})
 
 	if t := strings.TrimSpace(title); t != "" {
@@ -93,8 +98,12 @@ func SearchByText(title, author, publisher string, limit, offset int) ([]Record,
 	if p := strings.TrimSpace(publisher); p != "" {
 		q = q.Where("publisher ILIKE ?", "%"+p+"%")
 	}
+	if len(languages) > 0 {
+		q = q.Where("languages = ?", pq.StringArray(languages))
+	}
 
 	var total int64
+
 	q.Count(&total)
 
 	var records []Record
