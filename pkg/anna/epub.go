@@ -154,11 +154,13 @@ func downloadFileInternal(ctx context.Context, magnetLink, serverPath, torrentNa
 	reader := targetFile.NewReader()
 	defer reader.Close()
 
-	data, err := io.ReadAll(reader)
+	// We use a LimitReader because sometimes the torrent reader might read slightly past the file boundary
+	// into padding bytes if the file ends in the middle of a piece.
+	data, err := io.ReadAll(io.LimitReader(reader, targetFile.Length()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
-	slog.Debug("File read into memory", "size", len(data))
+	slog.Info("File read into memory", "size", len(data))
 
 	if EpubStorageDir != "" {
 		if err := os.MkdirAll(EpubStorageDir, 0755); err != nil {
@@ -168,7 +170,7 @@ func downloadFileInternal(ctx context.Context, magnetLink, serverPath, torrentNa
 			if err := os.WriteFile(path, data, 0644); err != nil {
 				slog.Warn("Failed to write file to storage", "path", path, "error", err)
 			} else {
-				slog.Info("File saved to storage", "path", path)
+				slog.Info("File saved to storage", "path", path, "size", len(data))
 			}
 		}
 	}
