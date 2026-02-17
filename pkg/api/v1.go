@@ -167,12 +167,12 @@ func Setup(api huma.API) {
 			{"bearerAuth": {}},
 		},
 	}, func(ctx context.Context, input *DownloadInput) (*struct{}, error) {
-		info, err := database.GetRecordDownloadInfo(input.ID)
+		info, err := database.GetRecordDownloadInfo(ctx, input.ID)
 		if err != nil {
 			return nil, huma.Error404NotFound("record download info not found", err)
 		}
 
-		torrent, err := database.GetTorrentByClassification(info.TorrentClassification)
+		torrent, err := database.GetTorrentByClassification(ctx, info.TorrentClassification)
 		if err != nil {
 			return nil, huma.Error404NotFound("torrent not found", err)
 		}
@@ -200,12 +200,12 @@ func Setup(api huma.API) {
 			{"bearerAuth": {}},
 		},
 	}, func(ctx context.Context, input *DownloadInput) (*DownloadOutput, error) {
-		info, err := database.GetRecordDownloadInfo(input.ID)
+		info, err := database.GetRecordDownloadInfo(ctx, input.ID)
 		if err != nil {
 			return nil, huma.Error404NotFound("record download info not found", err)
 		}
 
-		torrent, err := database.GetTorrentByClassification(info.TorrentClassification)
+		torrent, err := database.GetTorrentByClassification(ctx, info.TorrentClassification)
 		if err != nil {
 			return nil, huma.Error404NotFound("torrent not found", err)
 		}
@@ -252,7 +252,7 @@ func Setup(api huma.API) {
 		Description: "Search for records by title, author, and publisher",
 		Tags:        []string{"Search"},
 	}, func(ctx context.Context, input *SearchByTextInput) (*SearchOutput, error) {
-		records, total, err := database.SearchByText(input.Title, input.Author, input.Publisher, input.Languages, input.Limit, input.Offset)
+		records, total, err := database.SearchByText(ctx, input.Title, input.Author, input.Publisher, input.Languages, input.Limit, input.Offset)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to search by text", err)
 		}

@@ -86,8 +86,8 @@ func SearchByISBN(ctx context.Context, isbnCode string, languages []string, limi
 }
 
 // SearchByText finds records matching the given title, author, and/or publisher filters (AND logic, case-insensitive).
-func SearchByText(title, author, publisher string, languages []string, limit, offset int) ([]Record, int64, error) {
-	q := DB.Model(&Record{})
+func SearchByText(ctx context.Context, title, author, publisher string, languages []string, limit, offset int) ([]Record, int64, error) {
+	q := DB.WithContext(ctx).Model(&Record{})
 
 	if t := strings.TrimSpace(title); t != "" {
 		q = q.Where("title ILIKE ?", "%"+t+"%")
@@ -120,9 +120,10 @@ func SearchByText(title, author, publisher string, languages []string, limit, of
 }
 
 // GetRecordByID returns a single record by its ID, or nil if not found.
-func GetRecordByID(id string) (*Record, error) {
+func GetRecordByID(ctx context.Context, id string) (*Record, error) {
 	var record Record
 	if err := DB.
+		WithContext(ctx).
 		Preload("Identifiers").
 		Preload("Classifications").
 		Where("id = ?", id).
@@ -139,9 +140,9 @@ type RecordDownloadInfo struct {
 }
 
 // GetRecordDownloadInfo retrieves the torrent classification and server_path for downloading a record's file.
-func GetRecordDownloadInfo(id string) (*RecordDownloadInfo, error) {
+func GetRecordDownloadInfo(ctx context.Context, id string) (*RecordDownloadInfo, error) {
 	var torrentClasses []RecordClassification
-	if err := DB.Where("record = ? AND type = ?", id, "torrent").Find(&torrentClasses).Error; err != nil {
+	if err := DB.WithContext(ctx).Where("record = ? AND type = ?", id, "torrent").Find(&torrentClasses).Error; err != nil {
 		return nil, fmt.Errorf("torrent classifications lookup failed: %w", err)
 	}
 	if len(torrentClasses) == 0 {
@@ -149,7 +150,7 @@ func GetRecordDownloadInfo(id string) (*RecordDownloadInfo, error) {
 	}
 
 	var serverPathIdents []RecordIdentifier
-	if err := DB.Where("record = ? AND type = ?", id, "server_path").Find(&serverPathIdents).Error; err != nil {
+	if err := DB.WithContext(ctx).Where("record = ? AND type = ?", id, "server_path").Find(&serverPathIdents).Error; err != nil {
 		return nil, fmt.Errorf("server_path identifiers lookup failed: %w", err)
 	}
 	if len(serverPathIdents) == 0 {
@@ -185,9 +186,9 @@ func GetRecordDownloadInfo(id string) (*RecordDownloadInfo, error) {
 }
 
 // GetTorrentByClassification finds a torrent whose URL ends with the given classification value.
-func GetTorrentByClassification(classification string) (*Torrent, error) {
+func GetTorrentByClassification(ctx context.Context, classification string) (*Torrent, error) {
 	var t Torrent
-	if err := DB.Where("url LIKE ?", "%"+classification).First(&t).Error; err != nil {
+	if err := DB.WithContext(ctx).Where("url LIKE ?", "%"+classification).First(&t).Error; err != nil {
 		return nil, fmt.Errorf("torrent not found for classification %s: %w", classification, err)
 	}
 	return &t, nil
