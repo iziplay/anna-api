@@ -79,13 +79,33 @@ func Setup(api huma.API) {
 	api.UseMiddleware(authMiddleware(api))
 
 	huma.Register(api, huma.Operation{
-		OperationID: "HealthCheck",
+		OperationID: "LivenessCheck",
 		Method:      "GET",
 		Path:        "/healthz",
-		Summary:     "Health check",
-		Description: "Check if the API is running",
+		Summary:     "Liveness check",
+		Description: "Check if the API process is alive",
 		Tags:        []string{"Health"},
 	}, func(ctx context.Context, input *struct{}) (*PlainOutput, error) {
+		return &PlainOutput{
+			ContentType: "text/plain",
+			Body:        []byte("OK"),
+		}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "ReadinessCheck",
+		Method:      "GET",
+		Path:        "/readyz",
+		Summary:     "Readiness check",
+		Description: "Check if the API is ready to serve traffic (database migrated and reachable)",
+		Tags:        []string{"Health"},
+	}, func(ctx context.Context, input *struct{}) (*PlainOutput, error) {
+		if !database.Ready() {
+			return nil, huma.Error503ServiceUnavailable("not ready")
+		}
+		if err := database.Ping(); err != nil {
+			return nil, huma.Error503ServiceUnavailable("database not reachable")
+		}
 		return &PlainOutput{
 			ContentType: "text/plain",
 			Body:        []byte("OK"),

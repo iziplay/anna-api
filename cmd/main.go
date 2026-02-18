@@ -127,6 +127,12 @@ func main() {
 		}
 	}()
 
+	// Run migration after the server is listening so /healthz is already live.
+	if err := database.AutoMigrate(); err != nil {
+		slog.Error("Failed to auto migrate", "error", err)
+		os.Exit(1)
+	}
+
 	go database.ComputeAndCacheStats(false)
 
 	for {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/iziplay/anna-api/pkg/anna"
@@ -21,6 +22,13 @@ import (
 
 // DB is the GORM database instance
 var DB *gorm.DB
+
+var ready atomic.Bool
+
+// Ready returns true once the database connection is established and migrations are complete.
+func Ready() bool {
+	return ready.Load()
+}
 
 func init() {
 	var err error
@@ -63,12 +71,6 @@ func init() {
 	sqlDB.SetConnMaxLifetime(5 * time.Minute)
 
 	slog.Info("Database connection established")
-
-	// Auto migrate the schema
-	if err := AutoMigrate(); err != nil {
-		slog.Error("Failed to auto migrate", "error", err)
-		os.Exit(1)
-	}
 }
 
 // AutoMigrate runs automatic migration for all models
@@ -115,6 +117,7 @@ func AutoMigrate() error {
 	}
 
 	slog.Info("Auto migration completed successfully")
+	ready.Store(true)
 	return nil
 }
 
