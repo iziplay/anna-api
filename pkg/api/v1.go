@@ -80,6 +80,14 @@ type SearchOutput struct {
 	}
 }
 
+type GetRecordInput struct {
+	ID string `path:"id" doc:"Record ID" required:"true"`
+}
+
+type GetRecordOutput struct {
+	Body database.Record
+}
+
 func Setup(api huma.API) {
 	if os.Getenv("ANNA_JWT_SECRET") == "" {
 		slog.Warn("ANNA_JWT_SECRET not set, authentication will be disabled")
@@ -338,5 +346,20 @@ func Setup(api huma.API) {
 		resp.Body.Total = total
 		resp.Body.Results = records
 		return resp, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "GetRecordByID",
+		Method:      "GET",
+		Path:        "/v1/records/{id}",
+		Summary:     "Get record by ID",
+		Description: "Get a single record by its ID",
+		Tags:        []string{"Records"},
+	}, func(ctx context.Context, input *GetRecordInput) (*GetRecordOutput, error) {
+		record, err := database.GetRecordByID(ctx, input.ID)
+		if err != nil {
+			return nil, huma.Error404NotFound("record not found")
+		}
+		return &GetRecordOutput{Body: *record}, nil
 	})
 }
