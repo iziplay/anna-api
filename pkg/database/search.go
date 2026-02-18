@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"unicode"
 
 	"github.com/iziplay/anna-api/pkg/isbn"
 	"github.com/lib/pq"
@@ -85,25 +86,48 @@ func SearchByISBN(ctx context.Context, isbnCode string, languages []string, limi
 	return records, total, nil
 }
 
-// SearchByText finds records matching the given title, author, and/or publisher filters (AND logic, case-insensitive).
+// ftsQuery converts user input into a to_tsquery-compatible string with
+// prefix matching. Each word becomes "word:*" and words are ANDed together.
+// Non-alphanumeric characters are stripped to prevent tsquery syntax errors.
+func ftsQuery(input string) string {
+	words := strings.Fields(strings.TrimSpace(input))
+	parts := make([]string, 0, len(words))
+	for _, w := range words {
+		safe := strings.Map(func(r rune) rune {
+			if unicode.IsLetter(r) || unicode.IsDigit(r) {
+				return r
+			}
+			return -1
+		}, w)
+		if safe != "" {
+			parts = append(parts, safe+":*")
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " & ")
+}
+
+// SearchByText finds records matching the given title, author, and/or publisher
+// filters (AND logic) using PostgreSQL full-text search for fast lookups.
 func SearchByText(ctx context.Context, title, author, publisher string, languages []string, limit, offset int) ([]Record, int64, error) {
 	q := DB.WithContext(ctx).Model(&Record{})
 
-	if t := strings.TrimSpace(title); t != "" {
-		q = q.Where("title ILIKE ?", "%"+t+"%")
+	if tsq := ftsQuery(title); tsq != "" {
+		q = q.Where("to_tsvector('simple_unaccent', coalesce(title, '')) @@ to_tsquery('simple_unaccent', ?)", tsq)
 	}
-	if a := strings.TrimSpace(author); a != "" {
-		q = q.Where("author ILIKE ?", "%"+a+"%")
+	if tsq := ftsQuery(author); tsq != "" {
+		q = q.Where("to_tsvector('simple_unaccent', coalesce(author, '')) @@ to_tsquery('simple_unaccent', ?)", tsq)
 	}
-	if p := strings.TrimSpace(publisher); p != "" {
-		q = q.Where("publisher ILIKE ?", "%"+p+"%")
+	if tsq := ftsQuery(publisher); tsq != "" {
+		q = q.Where("to_tsvector('simple_unaccent', coalesce(publisher, '')) @@ to_tsquery('simple_unaccent', ?)", tsq)
 	}
 	if len(languages) > 0 {
 		q = q.Where("languages = ?", pq.StringArray(languages))
 	}
 
 	var total int64
-
 	q.Count(&total)
 
 	var records []Record

@@ -58,7 +58,7 @@ type SearchByISBNInput struct {
 type SearchByTextInput struct {
 	Title     string   `query:"title" required:"true" doc:"Filter by title (case-insensitive)"`
 	Author    string   `query:"author" required:"true" doc:"Filter by author (case-insensitive)"`
-	Publisher string   `query:"publisher" required:"true" doc:"Filter by publisher (case-insensitive)"`
+	Publisher string   `query:"publisher" doc:"Filter by publisher (case-insensitive)"`
 	Languages []string `query:"languages" doc:"Filter by language (strict equality)"`
 	Limit     int      `query:"limit" default:"20" minimum:"1" maximum:"100" doc:"Maximum number of results"`
 	Offset    int      `query:"offset" default:"0" minimum:"0" doc:"Offset for pagination"`

@@ -80,6 +80,14 @@ func AutoMigrate() error {
 		return fmt.Errorf("failed to create pg_trgm extension: %w", err)
 	}
 
+	// Enable unaccent extension for diacritics-insensitive search
+	if err := DB.Exec("CREATE EXTENSION IF NOT EXISTS unaccent").Error; err != nil {
+		return fmt.Errorf("failed to create unaccent extension: %w", err)
+	}
+
+	// Create a custom text search configuration that strips diacritics.
+	DB.Exec("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_ts_config WHERE cfgname = 'simple_unaccent') THEN CREATE TEXT SEARCH CONFIGURATION simple_unaccent (COPY = simple); ALTER TEXT SEARCH CONFIGURATION simple_unaccent ALTER MAPPING FOR word, numword, asciiword, numhword, asciihword, hword, hword_numpart, hword_part, hword_asciipart WITH unaccent, simple; END IF; END $$")
+
 	err := DB.AutoMigrate(
 		&Record{},
 		&RecordIdentifier{},
@@ -90,6 +98,20 @@ func AutoMigrate() error {
 
 	if err != nil {
 		return fmt.Errorf("auto migration failed: %w", err)
+	}
+
+	// Create functional GIN indexes for full-text search on text columns.
+	// These use to_tsvector('simple_unaccent', ...) to match the @@ expressions
+	// in SearchByText and handle diacritics transparently.
+	ftsIndexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_record_title_fts ON anna_records USING gin (to_tsvector('simple_unaccent', coalesce(title, '')))",
+		"CREATE INDEX IF NOT EXISTS idx_record_author_fts ON anna_records USING gin (to_tsvector('simple_unaccent', coalesce(author, '')))",
+		"CREATE INDEX IF NOT EXISTS idx_record_publisher_fts ON anna_records USING gin (to_tsvector('simple_unaccent', coalesce(publisher, '')))",
+	}
+	for _, ddl := range ftsIndexes {
+		if err := DB.Exec(ddl).Error; err != nil {
+			return fmt.Errorf("failed to create FTS index: %w", err)
+		}
 	}
 
 	slog.Info("Auto migration completed successfully")
