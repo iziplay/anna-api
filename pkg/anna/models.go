@@ -17,17 +17,18 @@ type RecordSource struct {
 
 // FileUnifiedData contains unified file metadata
 type FileUnifiedData struct {
-	CoverURLBest           string              `json:"cover_url_best"`
-	ExtensionBest          string              `json:"extension_best"`
-	FilesizeBest           int64               `json:"filesize_best"`
-	TitleBest              string              `json:"title_best"`
-	AuthorBest             string              `json:"author_best"`
-	PublisherBest          string              `json:"publisher_best"`
-	YearBest               string              `json:"year_best"`
-	LanguageCodes          []string            `json:"language_codes"`
-	ContentTypeBest        string              `json:"content_type_best"`
-	IdentifiersUnified     map[string][]string `json:"identifiers_unified"`
-	ClassificationsUnified map[string][]string `json:"classifications_unified"`
+	CoverURLBest            string              `json:"cover_url_best"`
+	ExtensionBest           string              `json:"extension_best"`
+	FilesizeBest            int64               `json:"filesize_best"`
+	TitleBest               string              `json:"title_best"`
+	AuthorBest              string              `json:"author_best"`
+	PublisherBest           string              `json:"publisher_best"`
+	YearBest                string              `json:"year_best"`
+	LanguageCodes           []string            `json:"language_codes"`
+	ContentTypeBest         string              `json:"content_type_best"`
+	StrippedDescriptionBest string              `json:"stripped_description_best"`
+	IdentifiersUnified      map[string][]string `json:"identifiers_unified"`
+	ClassificationsUnified  map[string][]string `json:"classifications_unified"`
 }
 
 // SearchOnlyFields contains search-specific metadata

@@ -14,13 +14,14 @@ type Model struct {
 type Record struct {
 	Model
 
-	ID        string         `json:"id" gorm:"primaryKey"`
-	Title     string         `json:"title" gorm:"index:idx_record_title_trgm,type:gin,expression:title gin_trgm_ops"`
-	Publisher string         `json:"publisher" gorm:"index:idx_record_publisher_trgm,type:gin,expression:publisher gin_trgm_ops"`
-	Author    string         `json:"author" gorm:"index:idx_record_author_trgm,type:gin,expression:author gin_trgm_ops"`
-	CoverURL  string         `json:"coverURL"`
-	Year      int            `json:"year"`
-	Languages pq.StringArray `json:"languages" gorm:"type:text[]"`
+	ID          string         `json:"id" gorm:"primaryKey"`
+	Title       string         `json:"title" gorm:"index:idx_record_title_trgm,type:gin,expression:title gin_trgm_ops"`
+	Publisher   string         `json:"publisher" gorm:"index:idx_record_publisher_trgm,type:gin,expression:publisher gin_trgm_ops"`
+	Author      string         `json:"author" gorm:"index:idx_record_author_trgm,type:gin,expression:author gin_trgm_ops"`
+	CoverURL    string         `json:"coverURL"`
+	Year        int            `json:"year"`
+	Languages   pq.StringArray `json:"languages" gorm:"type:text[]"`
+	Description string         `json:"description,omitempty"`
 
 	Identifiers     []RecordIdentifier     `json:"identifiers" gorm:"foreignKey:Record;references:ID"`
 	Classifications []RecordClassification `json:"classifications" gorm:"foreignKey:Record;references:ID"`

@@ -190,10 +190,14 @@ func UpsertRecordAndIdentifiers(ctx context.Context, annaRecord *anna.Record) er
 		Languages: pq.StringArray(languages),
 	}
 
+	if annaRecord.Source.FileUnifiedData.StrippedDescriptionBest != "" {
+		record.Description = sanitizeString(annaRecord.Source.FileUnifiedData.StrippedDescriptionBest)
+	}
+
 	// Upsert the record using ON CONFLICT
 	if err := DB.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"title", "publisher", "author", "cover_url", "year", "languages", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"title", "publisher", "author", "cover_url", "year", "languages", "description", "updated_at"}),
 	}).Create(&record).Error; err != nil {
 		return fmt.Errorf("failed to upsert record: %w", err)
 	}
