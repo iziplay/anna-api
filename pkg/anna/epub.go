@@ -29,6 +29,103 @@ const (
 
 type DownloadStatus string
 
+// DownloadProgressEvent represents a download progress update
+type DownloadProgressEvent struct {
+	Status         DownloadStatus `json:"status"`
+	BytesCompleted int64          `json:"bytes_completed"`
+	TotalBytes     int64          `json:"total_bytes"`
+	Percent        float64        `json:"percent"`
+}
+
+type downloadTracker struct {
+	mu          sync.RWMutex
+	progress    DownloadProgressEvent
+	subscribers []chan DownloadProgressEvent
+}
+
+func newDownloadTracker() *downloadTracker {
+	return &downloadTracker{
+		progress: DownloadProgressEvent{
+			Status: DownloadStatusDownloading,
+		},
+	}
+}
+
+func (t *downloadTracker) update(bytesCompleted, totalBytes int64) {
+	t.mu.Lock()
+	percent := 0.0
+	if totalBytes > 0 {
+		percent = float64(bytesCompleted) / float64(totalBytes) * 100
+	}
+	t.progress = DownloadProgressEvent{
+		Status:         DownloadStatusDownloading,
+		BytesCompleted: bytesCompleted,
+		TotalBytes:     totalBytes,
+		Percent:        percent,
+	}
+	subs := make([]chan DownloadProgressEvent, len(t.subscribers))
+	copy(subs, t.subscribers)
+	progress := t.progress
+	t.mu.Unlock()
+
+	for _, ch := range subs {
+		select {
+		case ch <- progress:
+		default:
+		}
+	}
+}
+
+func (t *downloadTracker) complete() {
+	t.mu.Lock()
+	t.progress.Status = DownloadStatusDownloaded
+	t.progress.Percent = 100
+	progress := t.progress
+	subs := t.subscribers
+	t.subscribers = nil
+	t.mu.Unlock()
+
+	for _, ch := range subs {
+		select {
+		case ch <- progress:
+		default:
+		}
+		close(ch)
+	}
+}
+
+func (t *downloadTracker) subscribe() (<-chan DownloadProgressEvent, func()) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	ch := make(chan DownloadProgressEvent, 10)
+	t.subscribers = append(t.subscribers, ch)
+	// Send current state immediately
+	ch <- t.progress
+	cleanup := func() {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		for i, sub := range t.subscribers {
+			if sub == ch {
+				t.subscribers = append(t.subscribers[:i], t.subscribers[i+1:]...)
+				break
+			}
+		}
+	}
+	return ch, cleanup
+}
+
+// SubscribeDownloadProgress subscribes to download progress events for a file.
+// Returns a channel of progress events and a cleanup function.
+// Returns nil if no active download is found.
+func SubscribeDownloadProgress(outputFilename string) (<-chan DownloadProgressEvent, func()) {
+	val, ok := activeDownloads.Load(outputFilename)
+	if !ok {
+		return nil, nil
+	}
+	tracker := val.(*downloadTracker)
+	return tracker.subscribe()
+}
+
 func GetDownloadStatus(outputFilename string) DownloadStatus {
 	if EpubStorageDir != "" {
 		path := filepath.Join(EpubStorageDir, outputFilename)
@@ -67,11 +164,16 @@ func DownloadFile(ctx context.Context, magnetLink, serverPath, torrentName, outp
 	}
 
 	// 2. Use singleflight to prevent multiple concurrent downloads for the same file
-	activeDownloads.Store(outputFilename, true)
-	defer activeDownloads.Delete(outputFilename)
+	newTracker := newDownloadTracker()
+	actual, _ := activeDownloads.LoadOrStore(outputFilename, newTracker)
+	tracker := actual.(*downloadTracker)
 
 	key := fmt.Sprintf("%s-%s", torrentName, outputFilename)
 	v, err, _ := g.Do(key, func() (interface{}, error) {
+		defer func() {
+			tracker.complete()
+			activeDownloads.Delete(outputFilename)
+		}()
 		// Double-check cache inside singleflight in case another goroutine just finished downloading it
 		if EpubStorageDir != "" {
 			path := filepath.Join(EpubStorageDir, outputFilename)
@@ -79,7 +181,7 @@ func DownloadFile(ctx context.Context, magnetLink, serverPath, torrentName, outp
 				return data, nil
 			}
 		}
-		return downloadFileInternal(ctx, magnetLink, serverPath, torrentName, outputFilename)
+		return downloadFileInternal(ctx, magnetLink, serverPath, torrentName, outputFilename, tracker)
 	})
 
 	if err != nil {
@@ -88,7 +190,7 @@ func DownloadFile(ctx context.Context, magnetLink, serverPath, torrentName, outp
 	return v.([]byte), nil
 }
 
-func downloadFileInternal(ctx context.Context, magnetLink, serverPath, torrentName, outputFilename string) ([]byte, error) {
+func downloadFileInternal(ctx context.Context, magnetLink, serverPath, torrentName, outputFilename string, tracker *downloadTracker) ([]byte, error) {
 	t, err := client.AddMagnet(magnetLink)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add magnet: %w", err)
@@ -137,9 +239,11 @@ func downloadFileInternal(ctx context.Context, magnetLink, serverPath, torrentNa
 
 	// Download only this file with highest priority
 	targetFile.Download()
+	tracker.update(0, targetFile.Length())
 
 	// Wait for download to complete
 	for targetFile.BytesCompleted() < targetFile.Length() {
+		tracker.update(targetFile.BytesCompleted(), targetFile.Length())
 		slog.Debug("Downloading file", "completed", targetFile.BytesCompleted(), "total", targetFile.Length())
 		select {
 		case <-ctx.Done():
@@ -148,6 +252,7 @@ func downloadFileInternal(ctx context.Context, magnetLink, serverPath, torrentNa
 			time.Sleep(500 * time.Millisecond)
 		}
 	}
+	tracker.update(targetFile.Length(), targetFile.Length())
 
 	slog.Info("File downloaded, reading contents", "path", targetFile.Path())
 

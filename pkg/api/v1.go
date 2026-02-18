@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/iziplay/anna-api/pkg/anna"
 	"github.com/iziplay/anna-api/pkg/database"
 	"github.com/iziplay/anna-api/pkg/sync"
@@ -46,6 +48,13 @@ type DownloadStatusOutput struct {
 	Body struct {
 		Status anna.DownloadStatus `json:"status" enum:"NOT_STARTED,DOWNLOADING,DOWNLOADED" doc:"Download status"`
 	}
+}
+
+// SSE event types for download progress streaming
+type DownloadProgressSSE anna.DownloadProgressEvent
+
+type DownloadErrorSSE struct {
+	Message string `json:"message"`
 }
 
 type SearchByISBNInput struct {
@@ -174,6 +183,55 @@ func Setup(api huma.API) {
 		resp := &DownloadStatusOutput{}
 		resp.Body.Status = status
 		return resp, nil
+	})
+
+	sse.Register(api, huma.Operation{
+		OperationID: "StreamDownloadProgress",
+		Method:      http.MethodGet,
+		Path:        "/v1/records/{id}/download/events",
+		Summary:     "Stream download progress",
+		Description: "Stream real-time download progress events via Server-Sent Events",
+		Tags:        []string{"Download"},
+		Security: []map[string][]string{
+			{"bearerAuth": {}},
+		},
+	}, map[string]any{
+		"progress": DownloadProgressSSE{},
+		"error":    DownloadErrorSSE{},
+	}, func(ctx context.Context, input *DownloadInput, send sse.Sender) {
+		filename := fmt.Sprintf("%s.epub", strings.ReplaceAll(input.ID, ":", "_"))
+
+		// If already downloaded, send a completed event immediately
+		status := anna.GetDownloadStatus(filename)
+		if status == anna.DownloadStatusDownloaded {
+			send.Data(DownloadProgressSSE{
+				Status:  anna.DownloadStatusDownloaded,
+				Percent: 100,
+			})
+			return
+		}
+
+		progressCh, cleanup := anna.SubscribeDownloadProgress(filename)
+		if progressCh == nil {
+			send.Data(DownloadErrorSSE{Message: "no active download found, start a download first using the prefetch endpoint"})
+			return
+		}
+		defer cleanup()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event, ok := <-progressCh:
+				if !ok {
+					return
+				}
+				send.Data(event)
+				if event.Status == anna.DownloadStatusDownloaded {
+					return
+				}
+			}
+		}
 	})
 
 	huma.Register(api, huma.Operation{
