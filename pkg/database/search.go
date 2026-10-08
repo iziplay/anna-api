@@ -143,6 +143,25 @@ func SearchByText(ctx context.Context, title, author, publisher string, language
 	return records, total, nil
 }
 
+// GetRecordsByIDs returns all records matching the given IDs, with identifiers
+// and classifications preloaded like the search endpoints do.
+func GetRecordsByIDs(ctx context.Context, ids []string) ([]Record, error) {
+	if len(ids) == 0 {
+		return []Record{}, nil
+	}
+
+	var records []Record
+	if err := DB.
+		WithContext(ctx).
+		Preload("Identifiers").
+		Preload("Classifications").
+		Where("id IN ?", ids).
+		Find(&records).Error; err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
 // GetRecordByID returns a single record by its ID, or nil if not found.
 func GetRecordByID(ctx context.Context, id string) (*Record, error) {
 	var record Record

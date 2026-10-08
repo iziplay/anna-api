@@ -148,6 +148,42 @@ func init() {
 	}
 }
 
+// ListDownloadedFiles returns the record IDs of all epub files present in the
+// storage directory. Filenames are derived from record IDs by replacing ":"
+// with "_" (e.g. "md5:abc123" -> "md5_abc123.epub"), so the first underscore
+// is converted back to a colon to recover the record ID.
+func ListDownloadedFiles() ([]string, error) {
+	if EpubStorageDir == "" {
+		return nil, nil
+	}
+
+	entries, err := os.ReadDir(EpubStorageDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read epub storage dir %s: %w", EpubStorageDir, err)
+	}
+
+	var ids []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".epub") {
+			continue
+		}
+		base := strings.TrimSuffix(name, ".epub")
+		if !strings.Contains(base, "_") {
+			slog.Warn("Skipping epub file with unexpected name format", "name", name)
+			continue
+		}
+		ids = append(ids, strings.Replace(base, "_", ":", 1))
+	}
+	return ids, nil
+}
+
 // DownloadFile downloads a specific file from a torrent and returns its contents.
 // magnetLink is the magnet link for the torrent.
 // serverPath is the server_path identifier value (e.g., "g5/zlib1/zlib1/pilimi-zlib-6160000-7229999/7225029").

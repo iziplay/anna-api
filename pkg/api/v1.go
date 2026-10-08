@@ -50,6 +50,13 @@ type DownloadStatusOutput struct {
 	}
 }
 
+type DownloadsOutput struct {
+	Body struct {
+		Total   int               `json:"total"`
+		Results []database.Record `json:"results"`
+	}
+}
+
 // SSE event types for download progress streaming
 type DownloadProgressSSE anna.DownloadProgressEvent
 
@@ -190,6 +197,33 @@ func Setup(api huma.API) {
 		status := anna.GetDownloadStatus(filename)
 		resp := &DownloadStatusOutput{}
 		resp.Body.Status = status
+		return resp, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "ListDownloadedRecords",
+		Method:      "GET",
+		Path:        "/v1/downloads",
+		Summary:     "List downloaded books",
+		Description: "List all epub files downloaded to storage and their matching database records",
+		Tags:        []string{"Download"},
+		Security: []map[string][]string{
+			{"bearerAuth": {}},
+		},
+	}, func(ctx context.Context, input *struct{}) (*DownloadsOutput, error) {
+		ids, err := anna.ListDownloadedFiles()
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list downloaded files", err)
+		}
+
+		records, err := database.GetRecordsByIDs(ctx, ids)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to fetch downloaded records", err)
+		}
+
+		resp := &DownloadsOutput{}
+		resp.Body.Total = len(records)
+		resp.Body.Results = records
 		return resp, nil
 	})
 
